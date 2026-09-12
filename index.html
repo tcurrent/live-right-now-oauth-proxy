@@ -3,85 +3,158 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Right Now - OAuth</title>
+    <title>Live Right Now OAuth Proxy</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #0f1015; color: #ffffff; }
-        .card { background: #181a20; padding: 2.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; max-width: 420px; width: 100%; border: 1px solid #2b2f3a; }
-        .spinner { border: 3px solid #2b2f3a; border-top: 3px solid #5356ff; border-radius: 50%; width: 28px; height: 28px; animation: spin 0.8s linear infinite; margin: 20px auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .success { color: #00e676; }
-        .error { color: #ff5252; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0e0e10;
+            color: #efeff1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            background: #18181b;
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            max-width: 400px;
+            width: 100%;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #9146ff;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1.5rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h2 { margin-bottom: 0.5rem; font-size: 1.25rem; }
+        p { color: #adadb8; font-size: 0.9rem; line-height: 1.4; }
+        .error { color: #eb0400; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2 id="title">Authenticating...</h2>
-        <div id="loader" class="spinner"></div>
-        <p id="status">Connecting...</p>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <h2 id="status-heading">Connecting to OAuth Provider...</h2>
+        <p id="status-text">Please wait while we establish authentication.</p>
     </div>
 
     <script>
-        // CONFIGURATION: Set your credentials and worker URL
-        const TWITCH_CLIENT_ID = "bsj8pbpnptei2b3q7zwp70gn14lptn";
-        const KICK_CLIENT_ID = "01M29F2N6HTHHC9E9YPASHHP0T";
+        // CONFIGURATION
+        const TWITCH_CLIENT_ID = "bsj8pbpnptei2b3q7zwp70gn14lptn"; // Replace with real Twitch Client ID
+        const KICK_CLIENT_ID = "01M29F2N6HTHHC9E9YPASHHP0T";     // Replace with real Kick Client ID
+        const REDIRECT_URI = "https://tcurrent.github.io/live-right-now-oauth-proxy/";
         const WORKER_URL = "https://live-right-now-oauth-proxy.tcurrent.workers.dev";
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const provider = (urlParams.get('provider') || 'twitch').toLowerCase();
-        const statePort = urlParams.get('state') || urlParams.get('port') || "4646";
-        
-        const currentUrl = window.location.origin + window.location.pathname;
+        // PKCE UTILITIES FOR KICK
+        async function generatePKCE() {
+            const array = new Uint8Array(32);
+            window.crypto.getRandomValues(array);
+            const verifier = btoa(String.fromCharCode(...array))
+                .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-        if (!code) {
-            // Initiate provider redirect
-            if (provider === 'twitch') {
-                const scope = encodeURIComponent("user:read:email");
-                window.location.href = `https://id.twitch.tv/oauth2/authorize?client_id=${TWITCH_CLIENT_ID}&redirect_uri=${encodeURIComponent(currentUrl)}&response_type=code&scope=${scope}&state=${statePort}`;
-            } else if (provider === 'kick') {
-                const scope = encodeURIComponent("user:read");
-                window.location.href = `https://id.kick.com/oauth/authorize?client_id=${KICK_CLIENT_ID}&redirect_uri=${encodeURIComponent(currentUrl)}&response_type=code&scope=${scope}&state=${statePort}`;
-            } else {
-                showError("Unsupported streaming provider requested.");
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const hash = await window.crypto.subtle.digest("SHA-256", data);
+            const challenge = btoa(String.fromCharCode(...new Uint8Array(hash)))
+                .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+            return { verifier, challenge };
+        }
+
+        // MAIN HANDLER
+        async function handleOAuth() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get("code");
+            const provider = urlParams.get("provider") || sessionStorage.getItem("oauth_provider");
+            const port = urlParams.get("port") || urlParams.get("state") || sessionStorage.getItem("callback_port") || "4646";
+
+            // STEP 1: INITIAL REDIRECT TO AUTH PROVIDER
+            if (!code) {
+                if (!provider) {
+                    showError("No provider specified in request.");
+                    return;
+                }
+
+                sessionStorage.setItem("oauth_provider", provider);
+                sessionStorage.setItem("callback_port", port);
+
+                if (provider === "twitch") {
+                    const twitchAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${TWITCH_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=user:read:email&state=${port}`;
+                    window.location.href = twitchAuthUrl;
+                } 
+                else if (provider === "kick") {
+                    const { verifier, challenge } = await generatePKCE();
+                    sessionStorage.setItem("kick_code_verifier", verifier);
+
+                    const kickAuthUrl = `https://id.kick.com/oauth/authorize?client_id=${KICK_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=user:read%20channel:read&code_challenge=${challenge}&code_challenge_method=S256&state=${port}`;
+                    window.location.href = kickAuthUrl;
+                } 
+                else {
+                    showError(`Unsupported provider: ${provider}`);
+                }
+                return;
             }
-        } else {
-            document.getElementById('status').innerText = `Exchanging token with ${provider.toUpperCase()}...`;
-            
-            fetch(WORKER_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+
+            // STEP 2: HANDLE CALLBACK AND EXCHANGE CODE VIA CLOUDFLARE WORKER
+            document.getElementById("status-heading").innerText = "Exchanging Access Credentials...";
+            document.getElementById("status-text").innerText = "Finalizing secure authorization handoff.";
+
+            try {
+                const payload = {
                     provider: provider,
                     code: code,
-                    redirect_uri: currentUrl
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.access_token) {
-                    document.getElementById('status').innerText = "Sending authorization to RuneLite...";
-                    
-                    fetch(`http://localhost:${statePort}/callback?provider=${provider}&token=${data.access_token}`)
-                        .then(() => {
-                            document.getElementById('loader').style.display = 'none';
-                            document.getElementById('title').innerText = "Success!";
-                            document.getElementById('title').className = "success";
-                            document.getElementById('status').innerText = "Connected! You may now close this browser tab.";
-                        })
-                        .catch(() => showError("Could not connect to RuneLite. Verify client is open."));
-                } else {
-                    showError(data.error_description || "Token authorization failed.");
+                    redirect_uri: REDIRECT_URI
+                };
+
+                if (provider === "kick") {
+                    payload.code_verifier = sessionStorage.getItem("kick_code_verifier");
                 }
-            })
-            .catch(() => showError("Auth proxy server unreachable."));
+
+                const response = await fetch(WORKER_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.error) {
+                    throw new Error(data.error_description || data.error || "Failed to exchange token.");
+                }
+
+                const accessToken = data.access_token;
+                
+                // STEP 3: FORWARD ACCESS TOKEN TO RUNELITE LOCAL HTTP LISTENER
+                document.getElementById("status-heading").innerText = "Redirecting to RuneLite...";
+                document.getElementById("status-text").innerText = "Passing token back to your local client.";
+
+                window.location.href = `http://localhost:${port}/callback?provider=${provider}&token=${encodeURIComponent(accessToken)}`;
+
+            } catch (err) {
+                showError(err.message);
+            }
         }
 
-        function showError(msg) {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('title').innerText = "Authentication Error";
-            document.getElementById('title').className = "error";
-            document.getElementById('status').innerText = msg;
+        function showError(message) {
+            document.getElementById("spinner").style.display = "none";
+            document.getElementById("status-heading").innerText = "Authentication Error";
+            document.getElementById("status-heading").className = "error";
+            document.getElementById("status-text").innerText = message;
         }
+
+        // Run on page load
+        handleOAuth();
     </script>
 </body>
 </html>
