@@ -78,6 +78,7 @@
             const code = urlParams.get("code");
             const provider = urlParams.get("provider") || sessionStorage.getItem("oauth_provider");
             const port = urlParams.get("port") || urlParams.get("state") || sessionStorage.getItem("callback_port") || "4646";
+            const nonce = urlParams.get("nonce") || sessionStorage.getItem("callback_nonce") || "";
 
             // STEP 1: INITIAL REDIRECT TO AUTH PROVIDER
             if (!code) {
@@ -88,6 +89,7 @@
 
                 sessionStorage.setItem("oauth_provider", provider);
                 sessionStorage.setItem("callback_port", port);
+                sessionStorage.setItem("callback_nonce", nonce);
 
                 if (provider === "twitch") {
                     const twitchAuthUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${TWITCH_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=user:read:email&state=${port}`;
@@ -139,7 +141,7 @@
                 document.getElementById("status-heading").innerText = "Redirecting to RuneLite...";
                 document.getElementById("status-text").innerText = "Passing token back to your local client.";
 
-                window.location.href = `http://localhost:${port}/callback?provider=${provider}&token=${encodeURIComponent(accessToken)}`;
+                window.location.href = `http://localhost:${port}/callback?provider=${provider}&token=${encodeURIComponent(accessToken)}&nonce=${encodeURIComponent(nonce)}`;
 
             } catch (err) {
                 showError(err.message);
