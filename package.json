@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "check": "tsc -p tsconfig.json",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

@@ -1,3 +1,15 @@
 name = "live-right-now-oauth-proxy"
 main = "src/index.ts"
 compatibility_date = "2024-09-01"
+
+[vars]
+PAGES_ORIGIN = "https://tcurrent.github.io"
+REDIRECT_URI = "https://tcurrent.github.io/live-right-now-oauth-proxy/"
+
+[[durable_objects.bindings]]
+name = "HANDOFFS"
+class_name = "HandoffStore"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["HandoffStore"]

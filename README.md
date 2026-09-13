@@ -1,3 +1,5 @@
 # live-right-now-oauth-proxy
 
-A lightweight, serverless OAuth 2.0 authentication proxy built to support [Live Right Now](https://github.com/tcurrent/live-right-now) RuneLite plugin. It safely handles Twitch and Kick authorization code exchanges by keeping client secrets on a Cloudflare Worker while using GitHub Pages to facilitate the browser-to-client redirect flow.
+A serverless OAuth 2.0 exchange service for the [Live Right Now](https://github.com/tcurrent/live-right-now) RuneLite plugin. It keeps provider client secrets in Cloudflare Worker secrets and returns a short-lived, one-time handoff code instead of exposing provider tokens to the browser.
+
+See [privacy documentation](docs/privacy.md) and [security documentation](docs/security.md). Production deployment is intentionally limited to protected version tags.
