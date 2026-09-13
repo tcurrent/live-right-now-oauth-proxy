@@ -12,4 +12,4 @@ class_name = "HandoffStore"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["HandoffStore"]
+new_sqlite_classes = ["HandoffStore"]
