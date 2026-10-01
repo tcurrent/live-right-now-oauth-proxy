@@ -4,7 +4,7 @@ compatibility_date = "2024-09-01"
 
 [vars]
 PAGES_ORIGIN = "https://tcurrent.github.io"
-TWITCH_REDIRECT_URI = "http://localhost:4646/callback"
+TWITCH_REDIRECT_URI = "https://tcurrent.github.io/live-right-now-oauth-proxy/"
 KICK_REDIRECT_URI = "https://tcurrent.github.io/live-right-now-oauth-proxy/"
 KICK_LOCAL_REDIRECT_URI = "http://localhost:4646/callback"
 
