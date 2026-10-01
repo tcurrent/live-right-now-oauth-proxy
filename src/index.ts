@@ -4,7 +4,9 @@ export interface Env {
   KICK_CLIENT_ID: string;
   KICK_CLIENT_SECRET: string;
   PAGES_ORIGIN: string;
-  REDIRECT_URI: string;
+  TWITCH_REDIRECT_URI: string;
+  KICK_REDIRECT_URI: string;
+  KICK_LOCAL_REDIRECT_URI: string;
   HANDOFFS: DurableObjectNamespace;
 }
 
@@ -14,6 +16,7 @@ interface ExchangeRequest {
   state: string;
   handoff_proof: string;
   code_verifier?: string;
+  redirect_uri?: string;
 }
 
 interface HandoffRecord {
@@ -63,9 +66,6 @@ export default {
       return json({ error: "Method not allowed" }, 405);
     }
     if (path === "/exchange") {
-      if (request.headers.get("Origin") !== env.PAGES_ORIGIN) {
-        return json({ error: "Untrusted origin" }, 403);
-      }
       return corsResponse(request, env, await exchange(request, env));
     }
     if (path === "/handoff") {
@@ -88,8 +88,21 @@ async function exchange(request: Request, env: Env): Promise<Response> {
   if (!isExchangeRequest(body) || (body.provider === "kick" && !body.code_verifier)) {
     return json({ error: "Invalid exchange request" }, 400);
   }
+  const origin = request.headers.get("Origin");
+  const isLocalKickExchange = body.provider === "kick" && body.redirect_uri === env.KICK_LOCAL_REDIRECT_URI;
+  if (body.provider === "kick" && origin !== env.PAGES_ORIGIN && !isLocalKickExchange) {
+    return json({ error: "Untrusted origin" }, 403);
+  }
+  if (body.provider === "twitch" && origin && origin !== env.PAGES_ORIGIN) {
+    return json({ error: "Untrusted origin" }, 403);
+  }
 
-  const tokenResponse = await fetchToken(body, env);
+  const redirectUri = getRedirectUri(body, env);
+  if (!redirectUri) {
+    return json({ error: "Invalid redirect URI" }, 400);
+  }
+
+  const tokenResponse = await fetchToken(body, env, redirectUri);
   if (!tokenResponse.ok) {
     return json({ error: "Provider token exchange failed" }, 400);
   }
@@ -124,14 +137,14 @@ async function redeem(request: Request, env: Env): Promise<Response> {
   });
 }
 
-async function fetchToken(body: ExchangeRequest, env: Env): Promise<Response> {
+async function fetchToken(body: ExchangeRequest, env: Env, redirectUri: string): Promise<Response> {
   const isTwitch = body.provider === "twitch";
   const params = new URLSearchParams({
     client_id: isTwitch ? env.TWITCH_CLIENT_ID : env.KICK_CLIENT_ID,
     client_secret: isTwitch ? env.TWITCH_CLIENT_SECRET : env.KICK_CLIENT_SECRET,
     code: body.code,
     grant_type: "authorization_code",
-    redirect_uri: env.REDIRECT_URI,
+    redirect_uri: redirectUri,
   });
   if (!isTwitch) {
     params.set("code_verifier", body.code_verifier!);
@@ -143,11 +156,25 @@ async function fetchToken(body: ExchangeRequest, env: Env): Promise<Response> {
   });
 }
 
+function getRedirectUri(body: ExchangeRequest, env: Env): string | null {
+  if (body.provider === "twitch") {
+    return body.redirect_uri === undefined || body.redirect_uri === env.TWITCH_REDIRECT_URI
+      ? env.TWITCH_REDIRECT_URI
+      : null;
+  }
+
+  if (body.redirect_uri === undefined || body.redirect_uri === env.KICK_REDIRECT_URI || body.redirect_uri === env.KICK_LOCAL_REDIRECT_URI) {
+    return body.redirect_uri ?? env.KICK_REDIRECT_URI;
+  }
+  return null;
+}
+
 function isExchangeRequest(body: ExchangeRequest): boolean {
   return (body.provider === "twitch" || body.provider === "kick")
     && typeof body.code === "string" && body.code.length > 0
     && typeof body.state === "string" && body.state.length >= 32
-    && typeof body.handoff_proof === "string" && body.handoff_proof.length >= 32;
+    && typeof body.handoff_proof === "string" && body.handoff_proof.length >= 32
+    && (body.redirect_uri === undefined || typeof body.redirect_uri === "string");
 }
 
 async function sha256Base64Url(value: string): Promise<string> {

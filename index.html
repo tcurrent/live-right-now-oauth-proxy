@@ -100,7 +100,7 @@
                     const { verifier, challenge } = await generatePKCE();
                     sessionStorage.setItem("kick_code_verifier", verifier);
 
-                    const kickAuthUrl = `https://id.kick.com/oauth/authorize?client_id=${KICK_CLIENT_ID}&redirect=127.0.0.1&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=user%3Aread%20channel%3Aread&code_challenge=${challenge}&code_challenge_method=S256&state=${encodeURIComponent(state)}`;
+                    const kickAuthUrl = `https://id.kick.com/oauth/authorize?client_id=${KICK_CLIENT_ID}&redirect=localhost&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=user%3Aread%20channel%3Aread&code_challenge=${challenge}&code_challenge_method=S256&state=${encodeURIComponent(state)}`;
                     window.location.href = kickAuthUrl;
                 } 
                 else {
@@ -152,7 +152,7 @@
                 document.getElementById("status-text").innerText = "Completing secure authorization handoff.";
 
                 sessionStorage.clear();
-                window.location.href = `http://127.0.0.1:4646/callback?provider=${encodeURIComponent(provider)}&handoff_code=${encodeURIComponent(handoffCode)}&state=${encodeURIComponent(state)}`;
+                window.location.href = `http://localhost:4646/callback?provider=${encodeURIComponent(provider)}&handoff_code=${encodeURIComponent(handoffCode)}&state=${encodeURIComponent(state)}`;
 
             } catch (err) {
                 showError(err.message);
