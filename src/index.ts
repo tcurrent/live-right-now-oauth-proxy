@@ -21,6 +21,7 @@ interface ExchangeRequest {
 
 interface HandoffRecord {
   accessToken: string;
+  refreshToken?: string;
   handoffProof: string;
 }
 
@@ -45,7 +46,7 @@ export class HandoffStore {
         return json({ error: "Invalid or expired handoff code" }, 400);
       }
       await this.state.storage.delete("record");
-      return json({ access_token: record.accessToken });
+      return json({ access_token: record.accessToken, refresh_token: record.refreshToken });
     }
 
     return json({ error: "Not found" }, 404);
@@ -73,6 +74,12 @@ export default {
         return json({ error: "Browser handoff redemption is not allowed" }, 403);
       }
       return redeem(request, env);
+    }
+    if (path === "/refresh") {
+      if (request.headers.has("Origin")) {
+        return json({ error: "Browser token refresh is not allowed" }, 403);
+      }
+      return refresh(request, env);
     }
     return json({ error: "Not found" }, 404);
   },
@@ -106,7 +113,7 @@ async function exchange(request: Request, env: Env): Promise<Response> {
   if (!tokenResponse.ok) {
     return json({ error: "Provider token exchange failed" }, 400);
   }
-  const tokenData = await tokenResponse.json() as { access_token?: string };
+  const tokenData = await tokenResponse.json() as { access_token?: string; refresh_token?: string };
   if (!tokenData.access_token) {
     return json({ error: "Provider returned no access token" }, 400);
   }
@@ -115,9 +122,45 @@ async function exchange(request: Request, env: Env): Promise<Response> {
   const handoffId = env.HANDOFFS.idFromName(handoffCode);
   await env.HANDOFFS.get(handoffId).fetch("https://handoff/store", {
     method: "POST",
-    body: JSON.stringify({ accessToken: tokenData.access_token, handoffProof: body.handoff_proof }),
+    body: JSON.stringify({
+      accessToken: tokenData.access_token,
+      refreshToken: body.provider === "kick" ? tokenData.refresh_token : undefined,
+      handoffProof: body.handoff_proof,
+    }),
   });
   return json({ handoff_code: handoffCode });
+}
+
+async function refresh(request: Request, env: Env): Promise<Response> {
+  let body: { provider?: string; refresh_token?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  if (body.provider !== "kick" || typeof body.refresh_token !== "string" || body.refresh_token.length === 0) {
+    return json({ error: "Invalid refresh request" }, 400);
+  }
+
+  const tokenResponse = await fetch("https://id.kick.com/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.KICK_CLIENT_ID,
+      client_secret: env.KICK_CLIENT_SECRET,
+      grant_type: "refresh_token",
+      refresh_token: body.refresh_token,
+    }),
+  });
+  if (!tokenResponse.ok) {
+    // 4xx tells the plugin the refresh token is dead; anything else is retryable.
+    return json({ error: "Provider token refresh failed" }, tokenResponse.status >= 400 && tokenResponse.status < 500 ? 400 : 502);
+  }
+  const tokenData = await tokenResponse.json() as { access_token?: string; refresh_token?: string };
+  if (!tokenData.access_token) {
+    return json({ error: "Provider returned no access token" }, 502);
+  }
+  return json({ access_token: tokenData.access_token, refresh_token: tokenData.refresh_token });
 }
 
 async function redeem(request: Request, env: Env): Promise<Response> {
